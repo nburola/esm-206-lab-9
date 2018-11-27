@@ -30,9 +30,8 @@ Use this template to follow along in Lab Week 9. Each code chunk you'll need is 
 ```{r packages, include = FALSE}
 
 # a. Load packages 'tidyverse' and 'stargazer':
-
-
-
+library(stargazer)
+library(tidyverse)
 ```
 
 ###2. Load data (slo_homes.csv) as a df called 'homes', then filter to create a data frame called 'homes_sub' that only include homes in SLO, Arroyo Grande, Santa Maria-Orcutt, and Atascadero
@@ -40,9 +39,16 @@ Use this template to follow along in Lab Week 9. Each code chunk you'll need is 
 ```{r get_data, include = FALSE}
 
 # a. Read in data as 'homes':
+homes <- read_csv("slo_homes.csv")
 
 
 # b. Filter to only include cities "San Luis Obispo", "Santa Maria-Orcutt", "Atascadero", and "Arroyo Grande", and call this new subset 'homes_sub':
+
+#select - coloumns 
+#filter - rows 
+
+homes_sub <- homes %>%  
+  filter(City == "Arroyo Grande" | City == "San Luis Obispo" | City == "Atascadero" | City == "Santa Maria-Orcutt")
 
 
 
@@ -105,10 +111,24 @@ Use summary() to view the model output and statistics.
 
 ```{r saturated}
 
-# a. Saturated model: 
+# a. Saturated model (uses all of the variables)
+# Home Price is your DEPENDENT VARIABLE 
+# Concerned about PricePerSqFt is calculated from the dependent variable Price which can lead to biased overfitting of model results
+#Equation: Price = -626690 - 76863(San Luis Obispo) - 9068.2 (Atascedero) + 120160.7 (SMO) + 230.7 (Square Feet)
+# Look at coefficients to write the equation 
+#Only way to interpret coefficients is with respect to reference levels (Arroyo Grande and Foreclosure)
+#Colineraty: Multiple variables that are strongly correlated doesn't make sense to include all of them in the same model 
+#Bedrooms, Bathrooms, and Square feet are all telling you the same thing 
+#1. Can pick the variable that is the most representative 
+#2. Can try to aggregate all three variables into one variable 
+#Keep square footage (Sqft) 
+homes_lm1 <- lm(Price ~ City + Bedrooms + Bathrooms + SqFt + PricePerSqFt + Status, data = homes_sub)
 
+homes_lm1
 
 # b. Model summary:
+
+summary(homes_lm1)
 
 ```
 
@@ -117,8 +137,24 @@ The next model: Exclude price per square foot, and bedrooms/bathrooms (since the
 ```{r subset}
 
 # a. Updated model with variables City, SqFt, and Status:
+# Always predict coefficients with respect to reference levels 
+#Omit price per square foot 
+# If two houses are exactly the same (square footage and status is the same), a house in San Luis Obispo is expected to sell 34,525.4 dollars more than a house in Arroyo Grande on average 
+#For every 1 foot increase in square foot, it will go up in terms of 245.9 dollars in price 
+#If two houses are exactly the same (square footage and status is the same), a house that is considered status regular will sell 210,000 dollars more than a house in foreclosure on average
+
+homes_lm2 <- lm(Price ~ City + SqFt + Status, data = homes_sub)
+
+homes_lm2
 
 # b. Model summary:
+#Value of 0.9447 means they are not completely different significantly between a house that is considered status regular and a house that is foreclosed 
+#P-value of intercept states whether or not it is close to 0 or not 
+#No such thing as a good R2 squared value or a bad R2 squared value 
+#Use the adjusted R2 value (0.5268)
+#This model does significantly predict housing models (p = <2.2e^-16)
+
+summary(homes_lm2)
 
 ```
 
@@ -127,18 +163,34 @@ Wait...but what if I wanted everything to be with respect to a Regular sale stat
 ```{r fct_relevel}
 
 # a. Set Status to class 'factor'
+class(homes_sub$Status) #Sees City as a character class 
+
+homes_sub$Status <- factor(homes_sub$Status)
+
+class(homes_sub$Status) #NOW sees City as a factor class 
 
 
 # b. Check to ensure it's a factor now
+#Use class() to check that homes_sub$City is a factor 
 
 
 # c. Check levels:
+levels(homes_sub$Status) #Checks 
 
 
 # d. Reassign reference level of "Status" to "Regular":
+homes_sub$Status <- fct_relevel(homes_sub$Status, "Regular")
+
+levels(homes_sub$Status) #Check level of homes_sub$Status with REGULAR as your reference level 
 
 
 # e. Now run the regression again - same equation, but now the reference level is different (Status = Regular): 
+#Regular does not show in summary, meaning it is a reference level 
+#Status of short sale will cost 2000 dollars more than status of foreclosure 
+
+homes_lm3 <- lm(Price ~ City + SqFt + Status, data = homes_sub)
+
+homes_lm3
 
 
 
@@ -156,18 +208,46 @@ Then we can evaluate model diagnostics using the plot() function:
 ```{r diagnostics}
 
 # a. Model diagnostics:
+plot(homes_lm3)
+
+#Residuals vs Fitted: Few vertical scatter above the red line; few outliers far from the red line, however, not an excuse to remove them. 
+#Would want to buy value point of 188 as it is way lower than every other point on the graph 
+#Is there a noticeable change in variance spread? 
+#YES, there is a noticeable change in variance spread
+#Red line = Weighted line of observations that you should ignore
+
+#Normal Q-Q: Normally distributed perfectly with the exception of 8 observations that are not following the perfect distribution of residuals 
+#Are the normal residuals perfeclty distributed?
+#Yes, asumption of normal residuals is met 
+
+#Overall, heteroscedasticity is OK, residuals normality definitely looks good, and conceptually and maethematically my model is making sense! 
+#Would choose lm_3
 
 ```
 
-###6. Model comparison by Akaike Information Criterion
+###6. Model comparison by Akaike Information Criterion (AIC)
 
 The AIC is a quantitative metric for model "optimization" that balances complexity with model fit. The best models are the ones that fit the data as well as possible, as simply as possible. Recall: lower AIC value indicates a *more optimal* balance - **BUT STATISTICS IS NO SUBSTITUTE FOR JUDGEMENT!!!**
 
 ```{r AIC}
+#Better models will be the ones that have a higher complexitiy while being really simple
 
 # a. AIC values for each model
 
+sat_aic <- AIC(homes_lm1) 
+sat_aic 
+#Value of 10699.25 on its own MEANS nothing, need to compare this value between models 
+
+final_aic <- AIC(homes_lm3)
+final_aic
+#Value of 11199.19 on its own MEANS nothing, need to compare this value between models
+
+#Lower AIC value indicates a higher commpelixity while being really simple for an AIC value, therefore sat_aic
+#NEVER SELECT A MODEL BASED ON THE AIC
+
 # Answer: which would you pick? 
+
+#I would still pick homes_lm3 because overall, heteroscedasticity is OK, residuals normality definitely looks good, and conceptually and maethematically my model is making sense!
 
 ```
 
@@ -176,8 +256,12 @@ The AIC is a quantitative metric for model "optimization" that balances complexi
 ```{r stargazer, results = 'asis'}
 
 # a. Prepare a nice regression table:
+#Gaps are based on what we did in the above work such as setting reference levels and getting rid of categories 
+# BE CAREFUL, the regression table in stargazer can be knitted to word for a better format (hint: knit to HTML first and then open the HTML in a word document to update there)
 
+lm_table <- stargazer(homes_lm1, homes_lm2, homes_lm3, type ="html")
 
+lm_table
 
 # Note: If you want to work with this in Word, save to html, open, copy and paste into Word. 
 
@@ -190,6 +274,9 @@ Using your final selected model, predict the housing price for a range of home s
 The predict() function uses the following syntax:
 
       predict(model_name, newdata = new_data_name)
+      
+New_data_name must be NAMED EXACTLY THE SAME as the variable that was originally created 
+Levels in categorical coloumns ALSO NEED TO MATCH with names 
       
 Defaults are to exclude the prediction SE and mean confidence interval - if you want to include, use arguments
 
@@ -221,6 +308,11 @@ df_new <- data.frame(City = rep(c("San Luis Obispo",
                                   times = 12, 
                                   each = 20))
 
+#Coloumn names in df_new HAVE THE SAME COLOUMN NAMES as in homes data file originally 
+#Creates sequence from 500 to 3500 feet and for each of cities 
+#Strings and levels also match 
+#Covers all kinds of combinations with one another 
+
 ```
 
 Make predictions for the new data using predict():
@@ -228,8 +320,13 @@ Make predictions for the new data using predict():
 ```{r predict}
 
 # a. Make predictions using the new data frame:
+price_predict <- predict(homes_lm3, newdata = df_new, se.fit = TRUE, interval = "confidence")
+
+#Make a prediction for the price, tell us what the error is, and the confidence interval
 
 # b. Bind predictions to the data to make it actually useful:
+
+predict_df <- data.frame(df_new, price_predict)
 
 
 
@@ -240,6 +337,12 @@ Then visualize it!
 ```{r graph, echo = FALSE}
 
 # Create a line graph with square footage on the x-axis, predicted price on y-axis, with color dependent on City and facet_wrapped by sale status (follow along):
+
+predict_graph <- ggplot(predict_df, aes(x = SqFt, y = fit.fit)) + 
+  geom_line(aes(color = City)) + 
+  facet_wrap(~Status)
+
+predict_graph
 
 
 ```
